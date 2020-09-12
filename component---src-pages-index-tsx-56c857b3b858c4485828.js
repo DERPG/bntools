@@ -1,0 +1,2 @@
+(window.webpackJsonp=window.webpackJsonp||[]).push([[2],{QeBL:function(e,n,t){"use strict";t.r(n),t.d(n,"default",(function(){return o}));var a=t("q1tI"),r=t.n(a),c=t("Wbzz");function o(){return r.a.createElement("div",null,r.a.createElement(c.a,{to:"game"},"Click here to play"))}}}]);
+//# sourceMappingURL=component---src-pages-index-tsx-56c857b3b858c4485828.js.map
