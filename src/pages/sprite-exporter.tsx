@@ -121,6 +121,8 @@ interface Oam {
   offsetX: number;
   offsetY: number;
   size: OamSize;
+  hflip: boolean;
+  vflip: boolean;
 }
 
 class Palette {
@@ -249,11 +251,15 @@ function readOams(reader: DataReader): Oam[] {
     }
 
     const oamSize = oamSizes[((shape & 0x3) << 2) + (size & 0x3)];
+    const hflip = (size & 0x40) > 0;
+    const vflip = (size & 0x20) > 0;
 
     const oam: Oam = {
       startTile,
       offsetX,
       offsetY,
+      hflip,
+      vflip,
       size: oamSize
     };
 
@@ -331,40 +337,62 @@ class SpriteExporter extends React.Component {
           x = oam.offsetX - 128;
         }
 
-        console.log(x);
-
         if (oam.offsetY <= 0x7f) {
           y = 128 + oam.offsetY;
         } else {
           y = oam.offsetY - 128;
         }
 
+        const canvasX = x + tox * 8 + (f % 8) * 64;
+        const canvasY = y + Math.floor(f / 8) * 64 + toy * 8;
+        const imageData = ctx.getImageData(canvasX, canvasY, oam.size.width * 8, oam.size.height * 8);
+
+        const pixels = new Array(oam.size.width * 8 * oam.size.height * 8);
+
         for (let t = 0; t < oam.size.total(); t++) {
           const tile = oam.startTile + t;
-          const canvasX = x + tox * 8 + (f % 8) * 64;
-          const canvasY = Math.floor(f / 8) * 64 + y + toy * 8;
-          const imageData = ctx.getImageData(canvasX, canvasY, 8, 8);
 
-          for (let i = 0; i < 64; i++) {
-            const bi = i * 4;
-            const pi = frame.tilemap.tiles[tile][i];
-            if (pi !== 0) {
-              const color = palette.true(pi);
-              imageData.data[bi] = color[0];
-              imageData.data[bi+1] = color[1];
-              imageData.data[bi+2] = color[2];
-              imageData.data[bi+3] = 0xff;
+          for (let ly = 0; ly < 8; ly++) {
+            for (let lx = 0; lx < 8; lx++) {
+              const i = ((toy * 8 + ly) * oam.size.width * 8 + (tox * 8 + lx));
+              const pi = frame.tilemap.tiles[tile][ly * 8 + lx];
+              if (pi !== 0) {
+                pixels[i] = palette.true(pi);
+              }
             }
           }
-
-          ctx.putImageData(imageData, canvasX, canvasY);
 
           tox ++;
           if (tox >= oam.size.width) {
             toy ++;
             tox = 0;
           }
-      }
+        }
+
+        if (oam.hflip) {
+          const w = oam.size.width * 8;
+          for (let i = 0; i < oam.size.height * 8; i++) {
+            const offset = i * w;
+            for (let j = 0; j < w / 2; j++) {
+              const t = pixels[offset + j];
+              pixels[offset + j] = pixels[offset + (w - 1 - j)];
+              pixels[offset + (w - 1 - j)] = t;
+            }
+          }
+        }
+
+        for (let i = 0; i < pixels.length; i++) {
+          const idx = i * 4;
+          const pixel = pixels[i];
+          if (pixel) {
+            imageData.data[idx] = pixel[0];
+            imageData.data[idx+1] = pixel[1];
+            imageData.data[idx+2] = pixel[2];
+            imageData.data[idx+3] = 0xff;
+          }
+        }
+
+        ctx.putImageData(imageData, canvasX, canvasY);
       });
 
     });
