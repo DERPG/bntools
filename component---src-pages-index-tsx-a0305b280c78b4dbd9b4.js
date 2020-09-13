@@ -1,0 +1,2 @@
+(window.webpackJsonp=window.webpackJsonp||[]).push([[2],{QeBL:function(e,t,n){"use strict";n.r(t),n.d(t,"default",(function(){return i}));var r=n("q1tI"),o=n.n(r),a=n("Wbzz");function i(){return o.a.createElement("div",null,o.a.createElement(a.a,{to:"sprite-exporter"},"Sprite Exporter"))}}}]);
+//# sourceMappingURL=component---src-pages-index-tsx-a0305b280c78b4dbd9b4.js.map
