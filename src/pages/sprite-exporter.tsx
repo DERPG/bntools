@@ -70,10 +70,12 @@ class Animation {
 class Frame {
   tilemap: Tilemap;
   palette: Palette;
+  oams: Oam[];
 
-  constructor(tilemap: Tilemap, palette: Palette) {
+  constructor(tilemap: Tilemap, palette: Palette, oams: Oam[]) {
     this.tilemap = tilemap;
     this.palette = palette;
+    this.oams = oams;
   }
 }
 
@@ -83,6 +85,42 @@ class Tilemap {
   constructor(tiles: number[][]) {
     this.tiles = tiles;
   }
+}
+
+class OamSize {
+  width: number;
+  height: number;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
+
+  total() {
+    return this.width * this.height;
+  }
+}
+
+const oamSizes: OamSize[] = [
+  new OamSize(1, 1),
+  new OamSize(2, 2),
+  new OamSize(4, 4),
+  new OamSize(8, 8),
+  new OamSize(2, 1),
+  new OamSize(4, 1),
+  new OamSize(4, 2),
+  new OamSize(8, 2),
+  new OamSize(1, 2),
+  new OamSize(1, 4),
+  new OamSize(2, 4),
+  new OamSize(4, 8)
+];
+
+interface Oam {
+  startTile: number;
+  offsetX: number;
+  offsetY: number;
+  size: OamSize;
 }
 
 class Palette {
@@ -137,7 +175,7 @@ function readSprite(data: Data, address: number): Frame[] {
     const tilemapPointer = cursor.read32();
     const palettePointer = cursor.read32();
     const ptr3 = cursor.read32();
-    const ptr4 = cursor.read32();
+    const oamPointer = cursor.read32();
     const animationDelay = cursor.read8();
     cursor.read8(); // 0x00
     const end = cursor.read8();
@@ -149,7 +187,10 @@ function readSprite(data: Data, address: number): Frame[] {
     cursor.setCursor(palettePointer);
     const palette = readPalette(cursor);
 
-    frames[i] = new Frame(tilemap, palette);
+    cursor.setCursor(oamPointer);
+    const oams = readOams(cursor);
+
+    frames[i] = new Frame(tilemap, palette, oams);
   }
 
   return frames;
@@ -185,6 +226,41 @@ function readPalette(reader: DataReader): Palette {
   }
 
   return new Palette(palette);
+}
+
+function readOams(reader: DataReader): Oam[] {
+  const oams: Oam[] = [];
+  const start = reader.read32() - 4;
+
+  // skip enough bytes
+  for (let i = 0; i < start; i++) {
+    reader.read8();
+  }
+
+  while (true) {
+    const startTile = reader.read8();
+    const offsetX = reader.read8();
+    const offsetY = reader.read8();
+    const size = reader.read8();
+    const shape = reader.read8();
+
+    if (startTile === 0xff && offsetX === 0xff && offsetY === 0xff && size === 0xff && shape === 0xff) {
+      break;
+    }
+
+    const oamSize = oamSizes[((shape & 0x3) << 2) + (size & 0x3)];
+
+    const oam: Oam = {
+      startTile,
+      offsetX,
+      offsetY,
+      size: oamSize
+    };
+
+    oams.push(oam);
+  }
+
+  return oams;
 }
 
 class SpriteExporter extends React.Component {
@@ -225,21 +301,72 @@ class SpriteExporter extends React.Component {
 
     const frames = readSprite(this.data, address);
 
-    frames.forEach((frame, y) => {
-      frame.tilemap.tiles.forEach((tile, xi) => {
-        const imageData = ctx.getImageData(xi * 8, y * 8, 8, 8);
-        const palette = frame.palette;
-        for (let p = 0; p < 64; p++) {
-          const bi = p * 4;
-          const color = palette.true(tile[p]);
-          imageData.data[bi] = color[0];
-          imageData.data[bi+1] = color[1];
-          imageData.data[bi+2] = color[2];
-          imageData.data[bi+3] = 0xff;
+    frames.forEach((frame, f) => {
+      // frame.tilemap.tiles.forEach((tile, xi) => {
+      //   const imageData = ctx.getImageData(xi * 8, y * 8, 8, 8);
+      //   const palette = frame.palette;
+        // for (let p = 0; p < 64; p++) {
+        //   const bi = p * 4;
+        //   const color = palette.true(tile[p]);
+        //   imageData.data[bi] = color[0];
+        //   imageData.data[bi+1] = color[1];
+        //   imageData.data[bi+2] = color[2];
+        //   imageData.data[bi+3] = 0xff;
+        // }
+
+      //   ctx.putImageData(imageData, xi * 8, y * 8);
+      // });
+
+      const palette = frame.palette;
+
+      frame.oams.forEach((oam) => {
+        console.log(oam);
+        let tox = 0;
+        let toy = 0;
+
+        let x = 0, y = 0;
+        if (oam.offsetX <= 0x7f) {
+          x = 128 + oam.offsetX;
+        } else {
+          x = oam.offsetX - 128;
         }
 
-        ctx.putImageData(imageData, xi * 8, y * 8);
+        console.log(x);
+
+        if (oam.offsetY <= 0x7f) {
+          y = 128 + oam.offsetY;
+        } else {
+          y = oam.offsetY - 128;
+        }
+
+        for (let t = 0; t < oam.size.total(); t++) {
+          const tile = oam.startTile + t;
+          const canvasX = x + tox * 8 + (f % 8) * 64;
+          const canvasY = Math.floor(f / 8) * 64 + y + toy * 8;
+          const imageData = ctx.getImageData(canvasX, canvasY, 8, 8);
+
+          for (let i = 0; i < 64; i++) {
+            const bi = i * 4;
+            const pi = frame.tilemap.tiles[tile][i];
+            if (pi !== 0) {
+              const color = palette.true(pi);
+              imageData.data[bi] = color[0];
+              imageData.data[bi+1] = color[1];
+              imageData.data[bi+2] = color[2];
+              imageData.data[bi+3] = 0xff;
+            }
+          }
+
+          ctx.putImageData(imageData, canvasX, canvasY);
+
+          tox ++;
+          if (tox >= oam.size.width) {
+            toy ++;
+            tox = 0;
+          }
+      }
       });
+
     });
   }
 
@@ -256,10 +383,10 @@ class SpriteExporter extends React.Component {
         <h2>Sprite exporter</h2>
         <input type="file" onChange={this.loadFile} />
         <input type="number" onChange={this.readSprite} defaultValue={0} />
-        <canvas ref={this.canvasRef} width={8 * 32} height={8 * 64} />
+        <canvas ref={this.canvasRef} width={8 * 128} height={8 * 64} />
       </div>
     );
   }
 }
 
-export default SpriteExporter
+export default SpriteExporter;
